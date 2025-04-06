@@ -1,73 +1,69 @@
-// sendSignal.js
-
 const axios = require('axios');
-const TelegramBot = require('node-telegram-bot-api');
+const { SMA, RSI, BollingerBands } = require('technicalindicators');
 
-// Ganti dengan token dan ID Telegram kamu
-const TELEGRAM_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN';
-const CHAT_ID = 'YOUR_CHAT_ID';
-const bot = new TelegramBot(TELEGRAM_TOKEN);
+const TELEGRAM_API = 'https://api.telegram.org/bot7086211397:AAGotudtgcHMhiS0d79k840IN_fMhH5QAnE/sendMessage';
+const CHAT_ID = '1775772121';
+const SYMBOL = 'bitcoin'; // bisa diganti dengan coin lain dari CoinCap
 
-const coins = ['BTCUSDT', 'ETHUSDT'];
-const interval = '15m';
-const limit = 100;
+async function fetchMarketData() {
+  const url = `https://api.coincap.io/v2/assets/${SYMBOL}/history?interval=h1`;
+  const response = await axios.get(url);
+  return response.data.data.map(item => parseFloat(item.priceUsd));
+}
 
 function calculateIndicators(prices) {
-  const closes = prices.map(candle => parseFloat(candle[4]));
+  const rsi = RSI.calculate({ values: prices, period: 14 });
+  const sma20 = SMA.calculate({ values: prices, period: 20 });
+  const bb = BollingerBands.calculate({
+    period: 20,
+    values: prices,
+    stdDev: 2
+  });
 
-  const rsiPeriod = 14;
-  const gains = [];
-  const losses = [];
-  for (let i = 1; i <= rsiPeriod; i++) {
-    const diff = closes[i] - closes[i - 1];
-    if (diff >= 0) gains.push(diff);
-    else losses.push(Math.abs(diff));
-  }
-  const avgGain = gains.reduce((a, b) => a + b, 0) / rsiPeriod;
-  const avgLoss = losses.reduce((a, b) => a + b, 0) / rsiPeriod;
-  const rs = avgGain / avgLoss;
-  const rsi = 100 - 100 / (1 + rs);
-
-  const smaPeriod = 20;
-  const sma = closes.slice(-smaPeriod).reduce((a, b) => a + b, 0) / smaPeriod;
-
-  const std = Math.sqrt(closes.slice(-smaPeriod).reduce((acc, val) => acc + Math.pow(val - sma, 2), 0) / smaPeriod);
-  const upperBB = sma + 2 * std;
-  const lowerBB = sma - 2 * std;
-
-  const lastPrice = closes[closes.length - 1];
-  const signal = rsi < 30 && lastPrice < lowerBB ? 'BUY' :
-                 rsi > 70 && lastPrice > upperBB ? 'SELL' : 'HOLD';
-
-  return { rsi, sma, upperBB, lowerBB, lastPrice, signal };
+  return {
+    rsi: rsi[rsi.length - 1],
+    sma: sma20[sma20.length - 1],
+    bb: bb[bb.length - 1],
+    price: prices[prices.length - 1]
+  };
 }
 
-async function fetchAndAnalyze(symbol) {
+function generateSignal({ rsi, sma, bb, price }) {
+  if (rsi < 30 && price < bb.lower) {
+    return { action: 'BUY', entry: price, tp: price * 1.01, sl: price * 0.99 };
+  } else if (rsi > 70 && price > bb.upper) {
+    return { action: 'SELL', entry: price, tp: price * 0.99, sl: price * 1.01 };
+  }
+  return null;
+}
+
+async function sendSignalToTelegram(signal) {
+  const text = `
+📊 Crypto Signal ${SYMBOL.toUpperCase()}
+Aksi: ${signal.action}
+Entry: $${signal.entry.toFixed(2)}
+TP: $${signal.tp.toFixed(2)}
+SL: $${signal.sl.toFixed(2)}
+  `;
+  await axios.post(TELEGRAM_API, {
+    chat_id: CHAT_ID,
+    text
+  });
+}
+
+async function main() {
   try {
-    const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-    const res = await axios.get(url);
-    const data = res.data;
-
-    const { rsi, sma, upperBB, lowerBB, lastPrice, signal } = calculateIndicators(data);
-
-    const message = `
-📈 *${symbol}*
-Price: *${lastPrice.toFixed(2)}*
-RSI: *${rsi.toFixed(2)}*
-SMA: *${sma.toFixed(2)}*
-Upper BB: *${upperBB.toFixed(2)}*
-Lower BB: *${lowerBB.toFixed(2)}*
-Signal: *${signal}*
-    `;
-
-    await bot.sendMessage(CHAT_ID, message, { parse_mode: 'Markdown' });
-  } catch (err) {
-    console.error(`Error on ${symbol}:`, err.message);
+    const prices = await fetchMarketData();
+    const indicators = calculateIndicators(prices);
+    const signal = generateSignal(indicators);
+    if (signal) {
+      await sendSignalToTelegram(signal);
+    } else {
+      console.log('⚠️ Tidak ada sinyal yang valid.');
+    }
+  } catch (error) {
+    console.error('❌ Error:', error.message);
   }
 }
 
-(async () => {
-  for (const coin of coins) {
-    await fetchAndAnalyze(coin);
-  }
-})();
+main();
