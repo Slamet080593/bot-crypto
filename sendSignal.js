@@ -3,10 +3,10 @@ const { SMA, RSI, BollingerBands } = require('technicalindicators');
 
 const TELEGRAM_API = 'https://api.telegram.org/bot7086211397:AAGotudtgcHMhiS0d79k840IN_fMhH5QAnE/sendMessage';
 const CHAT_ID = '1775772121';
-const SYMBOL = 'bitcoin'; // bisa diganti dengan coin lain dari CoinCap
+const SYMBOLS = ['bitcoin', 'ethereum']; // Tambahkan coin lain sesuai nama di CoinCap
 
-async function fetchMarketData() {
-  const url = `https://api.coincap.io/v2/assets/${SYMBOL}/history?interval=h1`;
+async function fetchMarketData(symbol) {
+  const url = `https://api.coincap.io/v2/assets/${symbol}/history?interval=h1`;
   const response = await axios.get(url);
   return response.data.data.map(item => parseFloat(item.priceUsd));
 }
@@ -37,9 +37,9 @@ function generateSignal({ rsi, sma, bb, price }) {
   return null;
 }
 
-async function sendSignalToTelegram(signal) {
+async function sendSignalToTelegram(symbol, signal) {
   const text = `
-📊 Crypto Signal ${SYMBOL.toUpperCase()}
+📊 Crypto Signal ${symbol.toUpperCase()}
 Aksi: ${signal.action}
 Entry: $${signal.entry.toFixed(2)}
 TP: $${signal.tp.toFixed(2)}
@@ -51,18 +51,24 @@ SL: $${signal.sl.toFixed(2)}
   });
 }
 
-async function main() {
+async function analyzeSymbol(symbol) {
   try {
-    const prices = await fetchMarketData();
+    const prices = await fetchMarketData(symbol);
     const indicators = calculateIndicators(prices);
     const signal = generateSignal(indicators);
     if (signal) {
-      await sendSignalToTelegram(signal);
+      await sendSignalToTelegram(symbol, signal);
     } else {
-      console.log('⚠️ Tidak ada sinyal yang valid.');
+      console.log(`⚠️ Tidak ada sinyal untuk ${symbol}`);
     }
   } catch (error) {
-    console.error('❌ Error:', error.message);
+    console.error(`❌ Error pada ${symbol}:`, error.message);
+  }
+}
+
+async function main() {
+  for (const symbol of SYMBOLS) {
+    await analyzeSymbol(symbol);
   }
 }
 
