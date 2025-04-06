@@ -3,7 +3,7 @@ const { SMA, RSI, BollingerBands } = require('technicalindicators');
 
 const TELEGRAM_API = 'https://api.telegram.org/bot7086211397:AAGotudtgcHMhiS0d79k840IN_fMhH5QAnE/sendMessage';
 const CHAT_ID = '1775772121';
-const SYMBOLS = ['bitcoin', 'ethereum']; // bisa tambah coin lain
+const SYMBOLS = ['bitcoin', 'ethereum', 'binance-coin', 'solana', 'ripple']; // total 5 coin
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
