@@ -3,7 +3,7 @@ const { SMA, RSI, BollingerBands } = require('technicalindicators');
 
 const TELEGRAM_API = 'https://api.telegram.org/bot7086211397:AAGotudtgcHMhiS0d79k840IN_fMhH5QAnE/sendMessage';
 const CHAT_ID = '1775772121';
-const SYMBOLS = ['bitcoin', 'ethereum']; // Tambahkan coin lain sesuai nama di CoinCap
+const SYMBOLS = ['bitcoin', 'ethereum']; // CoinCap ID
 
 async function fetchMarketData(symbol) {
   const url = `https://api.coincap.io/v2/assets/${symbol}/history?interval=h1`;
@@ -66,9 +66,15 @@ async function analyzeSymbol(symbol) {
   }
 }
 
+// Fungsi untuk delay (ms)
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function main() {
   for (const symbol of SYMBOLS) {
     await analyzeSymbol(symbol);
+    await delay(2000); // Delay 2 detik antar coin
   }
 }
 
