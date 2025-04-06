@@ -1,26 +1,19 @@
-name: Kirim Sinyal Trading ke Telegram
+# .github/workflows/crypto.yml
+name: Crypto Signal Bot
 
 on:
   schedule:
     - cron: '0 * * * *' # setiap jam
-
   workflow_dispatch:
 
 jobs:
-  send:
+  signal:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
-
-    - name: Install dependencies
-      run: npm install
-
-    - name: Jalankan Bot
-      run: npm start
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - run: npm install
+      - run: node sendSignal.js
