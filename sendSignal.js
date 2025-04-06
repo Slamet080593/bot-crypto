@@ -1,68 +1,87 @@
+// sendSignal.js
 const axios = require('axios');
-const { SMA, RSI, BollingerBands } = require('technicalindicators');
+const TelegramBot = require('node-telegram-bot-api');
+const technicalIndicators = require('technicalindicators');
 
-const TELEGRAM_API = 'https://api.telegram.org/bot7086211397:AAGotudtgcHMhiS0d79k840IN_fMhH5QAnE/sendMessage';
+const TELEGRAM_TOKEN = '7086211397:AAGotudtgcHMhiS0d79k840IN_fMhH5QAnE';
 const CHAT_ID = '1775772121';
-const SYMBOL = 'bitcoin'; // bisa diganti dengan coin lain dari CoinCap
+const INTERVAL = '1h';
+const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT'];
 
-async function fetchMarketData() {
-  const url = `https://api.coincap.io/v2/assets/${SYMBOL}/history?interval=h1`;
+const bot = new TelegramBot(TELEGRAM_TOKEN);
+
+async function fetchKlines(symbol) {
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${INTERVAL}&limit=100`;
   const response = await axios.get(url);
-  return response.data.data.map(item => parseFloat(item.priceUsd));
+  return response.data.map(k => ({
+    time: k[0],
+    open: parseFloat(k[1]),
+    high: parseFloat(k[2]),
+    low: parseFloat(k[3]),
+    close: parseFloat(k[4]),
+    volume: parseFloat(k[5]),
+  }));
 }
 
-function calculateIndicators(prices) {
-  const rsi = RSI.calculate({ values: prices, period: 14 });
-  const sma20 = SMA.calculate({ values: prices, period: 20 });
-  const bb = BollingerBands.calculate({
+function analyze(data) {
+  const closePrices = data.map(d => d.close);
+
+  const rsi = technicalIndicators.RSI.calculate({ values: closePrices, period: 14 });
+  const sma = technicalIndicators.SMA.calculate({ values: closePrices, period: 20 });
+  const bb = technicalIndicators.BollingerBands.calculate({
     period: 20,
-    values: prices,
-    stdDev: 2
+    values: closePrices,
+    stdDev: 2,
   });
 
-  return {
-    rsi: rsi[rsi.length - 1],
-    sma: sma20[sma20.length - 1],
-    bb: bb[bb.length - 1],
-    price: prices[prices.length - 1]
-  };
-}
+  const lastRSI = rsi[rsi.length - 1];
+  const lastClose = closePrices[closePrices.length - 1];
+  const lastSMA = sma[sma.length - 1];
+  const lastBB = bb[bb.length - 1];
 
-function generateSignal({ rsi, sma, bb, price }) {
-  if (rsi < 30 && price < bb.lower) {
-    return { action: 'BUY', entry: price, tp: price * 1.01, sl: price * 0.99 };
-  } else if (rsi > 70 && price > bb.upper) {
-    return { action: 'SELL', entry: price, tp: price * 0.99, sl: price * 1.01 };
+  if (lastRSI < 30 && lastClose < lastBB.lower && lastClose > lastSMA) {
+    return {
+      signal: 'BUY',
+      entry: lastClose,
+      tp: (lastClose * 1.015).toFixed(2),
+      sl: (lastClose * 0.985).toFixed(2)
+    };
+  } else if (lastRSI > 70 && lastClose > lastBB.upper && lastClose < lastSMA) {
+    return {
+      signal: 'SELL',
+      entry: lastClose,
+      tp: (lastClose * 0.985).toFixed(2),
+      sl: (lastClose * 1.015).toFixed(2)
+    };
   }
-  return null;
-}
 
-async function sendSignalToTelegram(signal) {
-  const text = `
-📊 Crypto Signal ${SYMBOL.toUpperCase()}
-Aksi: ${signal.action}
-Entry: $${signal.entry.toFixed(2)}
-TP: $${signal.tp.toFixed(2)}
-SL: $${signal.sl.toFixed(2)}
-  `;
-  await axios.post(TELEGRAM_API, {
-    chat_id: CHAT_ID,
-    text
-  });
+  return { signal: 'NO SIGNAL' };
 }
 
 async function main() {
-  try {
-    const prices = await fetchMarketData();
-    const indicators = calculateIndicators(prices);
-    const signal = generateSignal(indicators);
-    if (signal) {
-      await sendSignalToTelegram(signal);
-    } else {
-      console.log('⚠️ Tidak ada sinyal yang valid.');
+  let messages = [];
+
+  for (let symbol of SYMBOLS) {
+    try {
+      const data = await fetchKlines(symbol);
+      const result = analyze(data);
+
+      if (result.signal !== 'NO SIGNAL') {
+        messages.push(`📊 ${symbol}
+Signal: ${result.signal}
+Entry: ${result.entry}
+TP: ${result.tp}
+SL: ${result.sl}`);
+      }
+    } catch (err) {
+      console.error(`Error on ${symbol}:`, err.message);
     }
-  } catch (error) {
-    console.error('❌ Error:', error.message);
+  }
+
+  if (messages.length > 0) {
+    await bot.sendMessage(CHAT_ID, messages.join('\n\n'));
+  } else {
+    console.log('No signal found.');
   }
 }
 
