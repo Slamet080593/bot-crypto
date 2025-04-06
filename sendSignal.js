@@ -3,11 +3,16 @@ const { SMA, RSI, BollingerBands } = require('technicalindicators');
 
 const TELEGRAM_API = 'https://api.telegram.org/bot7086211397:AAGotudtgcHMhiS0d79k840IN_fMhH5QAnE/sendMessage';
 const CHAT_ID = '1775772121';
-const SYMBOLS = ['bitcoin', 'ethereum']; // CoinCap ID
+const SYMBOLS = ['bitcoin', 'ethereum']; // bisa tambah coin lain
+
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchMarketData(symbol) {
   const url = `https://api.coincap.io/v2/assets/${symbol}/history?interval=h1`;
-  const response = await axios.get(url);
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/91.0.4472.124 Safari/537.36'
+  };
+  const response = await axios.get(url, { headers });
   return response.data.data.map(item => parseFloat(item.priceUsd));
 }
 
@@ -28,7 +33,7 @@ function calculateIndicators(prices) {
   };
 }
 
-function generateSignal({ rsi, sma, bb, price }) {
+function generateSignal({ rsi, bb, price }) {
   if (rsi < 30 && price < bb.lower) {
     return { action: 'BUY', entry: price, tp: price * 1.01, sl: price * 0.99 };
   } else if (rsi > 70 && price > bb.upper) {
@@ -51,29 +56,23 @@ SL: $${signal.sl.toFixed(2)}
   });
 }
 
-async function analyzeSymbol(symbol) {
-  try {
-    const prices = await fetchMarketData(symbol);
-    const indicators = calculateIndicators(prices);
-    const signal = generateSignal(indicators);
-    if (signal) {
-      await sendSignalToTelegram(symbol, signal);
-    } else {
-      console.log(`⚠️ Tidak ada sinyal untuk ${symbol}`);
-    }
-  } catch (error) {
-    console.error(`❌ Error pada ${symbol}:`, error.message);
-  }
-}
-
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 async function main() {
   for (const symbol of SYMBOLS) {
-    await analyzeSymbol(symbol);
-    await delay(5000); // Delay 5 detik
+    try {
+      const prices = await fetchMarketData(symbol);
+      const indicators = calculateIndicators(prices);
+      const signal = generateSignal(indicators);
+      if (signal) {
+        await sendSignalToTelegram(symbol, signal);
+      } else {
+        console.log(`⚠️ Tidak ada sinyal yang valid untuk ${symbol}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error pada ${symbol}: ${error.message}`);
+    }
+
+    // Delay 10 detik antar request
+    await delay(10000);
   }
 }
 
