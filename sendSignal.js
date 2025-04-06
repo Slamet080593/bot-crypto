@@ -6,7 +6,7 @@ const CHAT_ID = "1775772121";
 
 // Ambil data candle terakhir dari Binance
 async function fetchCandles(symbol = "BTCUSDT", interval = "1h", limit = 50) {
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  const url = `https://api1.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
   const response = await axios.get(url);
   return response.data.map(candle => ({
     time: candle[0],
