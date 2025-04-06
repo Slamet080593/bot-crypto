@@ -1,67 +1,103 @@
-const axios = require('axios');
-const https = require('https');
-const ti = require('technicalindicators');
+const axios = require("axios");
+const { RSI, SMA, BollingerBands } = require("technicalindicators");
 
-const TOKEN = '7086211397:AAGotudtgcHMhiS0d79k840IN_fMhH5QAnE';
-const CHAT_ID = '1775772121';
-const COINS = ['bitcoin', 'ethereum'];
+const TELEGRAM_BOT_TOKEN = "7086211397:AAGotudtgcHMhiS0d79k840IN_fMhH5QAnE";
+const CHAT_ID = "1775772121";
 
-async function fetchMarketData(coinId) {
-  const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=1&interval=hourly`;
-  const res = await axios.get(url);
-  return res.data.prices.map(p => p[1]); // ambil harga saja
+// Ambil data candle terakhir dari Binance
+async function fetchCandles(symbol = "BTCUSDT", interval = "1h", limit = 50) {
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  const response = await axios.get(url);
+  return response.data.map(candle => ({
+    time: candle[0],
+    open: parseFloat(candle[1]),
+    high: parseFloat(candle[2]),
+    low: parseFloat(candle[3]),
+    close: parseFloat(candle[4]),
+    volume: parseFloat(candle[5])
+  }));
 }
 
-function analyze(prices) {
-  const rsi = ti.RSI.calculate({ values: prices, period: 14 });
-  const ma = ti.SMA.calculate({ values: prices, period: 10 });
-  const bb = ti.BollingerBands.calculate({
-    values: prices,
+// Hitung indikator dan tentukan sinyal
+function analyze(candles) {
+  const close = candles.map(c => c.close);
+
+  const rsi = RSI.calculate({ values: close, period: 14 });
+  const sma = SMA.calculate({ values: close, period: 14 });
+  const bb = BollingerBands.calculate({
     period: 20,
-    stdDev: 2
+    stdDev: 2,
+    values: close
   });
 
-  const latestPrice = prices[prices.length - 1];
+  const latestPrice = close[close.length - 1];
   const latestRSI = rsi[rsi.length - 1];
-  const latestMA = ma[ma.length - 1];
+  const latestSMA = sma[sma.length - 1];
   const latestBB = bb[bb.length - 1];
 
-  let advice = '🔍 Belum ada sinyal jelas';
-  if (latestRSI < 35 && latestPrice < latestBB.lower) {
-    advice = `🟢 Buy signal (RSI ${latestRSI.toFixed(2)}, harga di bawah BB)`;
-  } else if (latestRSI > 70 && latestPrice > latestBB.upper) {
-    advice = `🔴 Sell signal (RSI ${latestRSI.toFixed(2)}, harga di atas BB)`;
+  let signal = "WAIT";
+
+  if (latestRSI < 30 && latestPrice < latestBB.lower && latestPrice > latestSMA) {
+    signal = "BUY";
+  } else if (latestRSI > 70 && latestPrice > latestBB.upper && latestPrice < latestSMA) {
+    signal = "SELL";
   }
 
+  const entry = latestPrice.toFixed(2);
+  const tp = (signal === "BUY")
+    ? (latestPrice * 1.01).toFixed(2)
+    : (latestPrice * 0.99).toFixed(2);
+  const sl = (signal === "BUY")
+    ? (latestPrice * 0.99).toFixed(2)
+    : (latestPrice * 1.01).toFixed(2);
+
   return {
-    price: latestPrice.toFixed(2),
+    signal,
+    entry,
+    tp,
+    sl,
     rsi: latestRSI.toFixed(2),
-    ma: latestMA.toFixed(2),
-    bbUpper: latestBB.upper.toFixed(2),
-    bbLower: latestBB.lower.toFixed(2),
-    advice
+    sma: latestSMA.toFixed(2),
+    bb: latestBB
   };
 }
 
-async function main() {
-  let message = `📈 *Sinyal Scalping per ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Jakarta' })} WIB*`;
-
-  for (const coin of COINS) {
-    const prices = await fetchMarketData(coin);
-    const result = analyze(prices);
-    message += `\n\n🪙 *${coin.toUpperCase()}*
-💰 Harga: $${result.price}
-📉 RSI: ${result.rsi}
-📊 MA: ${result.ma}
-📏 BB: ${result.bbLower} - ${result.bbUpper}
-📌 *Sinyal:* ${result.advice}`;
-  }
-
-  await axios.post(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+// Kirim sinyal ke Telegram
+async function sendToTelegram(msg) {
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  await axios.post(url, {
     chat_id: CHAT_ID,
-    text: message,
-    parse_mode: 'Markdown'
+    text: msg
   });
 }
 
-main().catch(console.error);
+// Jalankan
+async function main() {
+  try {
+    const candles = await fetchCandles();
+    const result = analyze(candles);
+
+    if (result.signal === "WAIT") {
+      console.log("Belum ada sinyal.");
+      return;
+    }
+
+    const message = `📊 *Signal Detected*
+Pair: BTC/USDT
+Sinyal: ${result.signal}
+Entry: ${result.entry}
+TP: ${result.tp}
+SL: ${result.sl}
+RSI: ${result.rsi}
+SMA(14): ${result.sma}
+BB: [${result.bb.lower.toFixed(2)} - ${result.bb.upper.toFixed(2)}]
+🕐 Interval: 1H`;
+
+    await sendToTelegram(message);
+    console.log("Sinyal terkirim.");
+  } catch (error) {
+    console.error("❌ Error:", error.message);
+  }
+}
+
+main();
