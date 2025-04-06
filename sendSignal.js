@@ -66,7 +66,6 @@ async function analyzeSymbol(symbol) {
   }
 }
 
-// Fungsi untuk delay (ms)
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -74,7 +73,7 @@ function delay(ms) {
 async function main() {
   for (const symbol of SYMBOLS) {
     await analyzeSymbol(symbol);
-    await delay(2000); // Delay 2 detik antar coin
+    await delay(5000); // Delay 5 detik
   }
 }
 
