@@ -1,18 +1,17 @@
 const axios = require('axios');
-const HttpsProxyAgent = require('https-proxy-agent');
 const TelegramBot = require('node-telegram-bot-api');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
-// Telegram setup
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const bot = new TelegramBot(TELEGRAM_TOKEN);
+const TELEGRAM_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN';
+const CHAT_ID = 'YOUR_CHAT_ID';
+const PROXY_URL = 'http://173.234.15.62:80';
 
-// Proxy setup
-const PROXY_URL = 'http://173.234.15.62:6075';
+const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
+
 const axiosInstance = axios.create({
-  httpsAgent: new HttpsProxyAgent(PROXY_URL),
-  timeout: 10000,
+  httpsAgent: new HttpsProxyAgent(PROXY_URL)
 });
+
 
 // List of symbols
 const symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT'];
