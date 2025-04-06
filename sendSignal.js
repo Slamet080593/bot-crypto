@@ -1,87 +1,109 @@
-// sendSignal.js
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
-const technicalIndicators = require('technicalindicators');
 
-const TELEGRAM_TOKEN = '7086211397:AAGotudtgcHMhiS0d79k840IN_fMhH5QAnE';
-const CHAT_ID = '1775772121';
-const INTERVAL = '1h';
-const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT'];
+const token = '7086211397:AAGotudtgcHMhiS0d79k840IN_fMhH5QAnE';
+const chatId = '1775772121';
+const bot = new TelegramBot(token);
 
-const bot = new TelegramBot(TELEGRAM_TOKEN);
+const coins = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT'];
 
-async function fetchKlines(symbol) {
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${INTERVAL}&limit=100`;
-  const response = await axios.get(url);
-  return response.data.map(k => ({
-    time: k[0],
-    open: parseFloat(k[1]),
-    high: parseFloat(k[2]),
-    low: parseFloat(k[3]),
-    close: parseFloat(k[4]),
-    volume: parseFloat(k[5]),
-  }));
+function calculateSMA(data, period) {
+  if (data.length < period) return null;
+  const sum = data.slice(-period).reduce((acc, val) => acc + val, 0);
+  return sum / period;
 }
 
-function analyze(data) {
-  const closePrices = data.map(d => d.close);
+function calculateEMA(data, period) {
+  if (data.length < period) return null;
+  const k = 2 / (period + 1);
+  let ema = data[0];
+  for (let i = 1; i < data.length; i++) {
+    ema = data[i] * k + ema * (1 - k);
+  }
+  return ema;
+}
 
-  const rsi = technicalIndicators.RSI.calculate({ values: closePrices, period: 14 });
-  const sma = technicalIndicators.SMA.calculate({ values: closePrices, period: 20 });
-  const bb = technicalIndicators.BollingerBands.calculate({
-    period: 20,
-    values: closePrices,
-    stdDev: 2,
-  });
+function calculateRSI(data, period = 14) {
+  if (data.length < period + 1) return null;
+  let gains = 0;
+  let losses = 0;
 
-  const lastRSI = rsi[rsi.length - 1];
-  const lastClose = closePrices[closePrices.length - 1];
-  const lastSMA = sma[sma.length - 1];
-  const lastBB = bb[bb.length - 1];
-
-  if (lastRSI < 30 && lastClose < lastBB.lower && lastClose > lastSMA) {
-    return {
-      signal: 'BUY',
-      entry: lastClose,
-      tp: (lastClose * 1.015).toFixed(2),
-      sl: (lastClose * 0.985).toFixed(2)
-    };
-  } else if (lastRSI > 70 && lastClose > lastBB.upper && lastClose < lastSMA) {
-    return {
-      signal: 'SELL',
-      entry: lastClose,
-      tp: (lastClose * 0.985).toFixed(2),
-      sl: (lastClose * 1.015).toFixed(2)
-    };
+  for (let i = data.length - period - 1; i < data.length - 1; i++) {
+    const change = data[i + 1] - data[i];
+    if (change >= 0) gains += change;
+    else losses -= change;
   }
 
-  return { signal: 'NO SIGNAL' };
+  const averageGain = gains / period;
+  const averageLoss = losses / period;
+
+  const rs = averageGain / averageLoss;
+  return 100 - 100 / (1 + rs);
+}
+
+function calculateBollingerBands(data, period = 20) {
+  if (data.length < period) return null;
+  const recent = data.slice(-period);
+  const sma = calculateSMA(recent, period);
+  const variance =
+    recent.reduce((acc, val) => acc + Math.pow(val - sma, 2), 0) / period;
+  const stdDev = Math.sqrt(variance);
+
+  return {
+    upper: sma + 2 * stdDev,
+    middle: sma,
+    lower: sma - 2 * stdDev,
+  };
+}
+
+async function fetchKlines(symbol) {
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1h&limit=100`;
+  try {
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        Accept: 'application/json',
+      },
+    });
+    return response.data.map((candle) => parseFloat(candle[4])); // Close prices
+  } catch (error) {
+    console.error(`Error on ${symbol}: ${error.message}`);
+    return null;
+  }
+}
+
+function generateSignal(prices) {
+  const sma = calculateSMA(prices, 14);
+  const ema = calculateEMA(prices, 14);
+  const rsi = calculateRSI(prices, 14);
+  const bb = calculateBollingerBands(prices, 20);
+
+  let signal = 'HOLD';
+
+  if (!sma || !ema || !rsi || !bb) return { signal: 'HOLD', detail: 'Data tidak cukup' };
+
+  const lastPrice = prices[prices.length - 1];
+
+  if (lastPrice > bb.upper && rsi > 70) signal = 'SELL';
+  else if (lastPrice < bb.lower && rsi < 30) signal = 'BUY';
+
+  return {
+    signal,
+    detail: `Price: ${lastPrice.toFixed(2)} | RSI: ${rsi.toFixed(2)} | SMA: ${sma.toFixed(
+      2
+    )} | EMA: ${ema.toFixed(2)}`,
+  };
 }
 
 async function main() {
-  let messages = [];
+  for (const symbol of coins) {
+    const prices = await fetchKlines(symbol);
+    if (!prices) continue;
 
-  for (let symbol of SYMBOLS) {
-    try {
-      const data = await fetchKlines(symbol);
-      const result = analyze(data);
-
-      if (result.signal !== 'NO SIGNAL') {
-        messages.push(`📊 ${symbol}
-Signal: ${result.signal}
-Entry: ${result.entry}
-TP: ${result.tp}
-SL: ${result.sl}`);
-      }
-    } catch (err) {
-      console.error(`Error on ${symbol}:`, err.message);
-    }
-  }
-
-  if (messages.length > 0) {
-    await bot.sendMessage(CHAT_ID, messages.join('\n\n'));
-  } else {
-    console.log('No signal found.');
+    const { signal, detail } = generateSignal(prices);
+    const message = `📈 *${symbol}*\nSignal: *${signal}*\n${detail}`;
+    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
   }
 }
 
