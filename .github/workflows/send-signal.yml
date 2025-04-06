@@ -1,19 +1,25 @@
-# .github/workflows/crypto.yml
-name: Crypto Signal Bot
+name: Send Crypto Signal
 
 on:
   schedule:
-    - cron: '0 * * * *' # setiap jam
+    - cron: '0 * * * *'  # Setiap jam
   workflow_dispatch:
 
 jobs:
-  signal:
+  send-signal:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: '18'
-      - run: npm install
-      - run: node sendSignal.js
+
+      - name: Install dependencies
+        run: npm install axios technicalindicators
+
+      - name: Run Signal Bot
+        run: node sendSignal.js
